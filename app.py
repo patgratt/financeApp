@@ -69,14 +69,79 @@ def index():
 
     return render_template("index.html", rows=rows, cash=usd(cash), sum=usd(sum))
 
-    
 
 
 @app.route("/buy", methods=["GET", "POST"])
 @login_required
 def buy():
     """Buy shares of stock"""
-    return apology("TODO")
+    
+    # if request method is GET, display buy.html form
+    if request.method == "GET":
+        return render_template("buy.html")
+
+    # if request method is POST
+    else:
+        # save stock symbol, number of shares, and quote dict from form
+        symbol = request.form.get("symbol")
+        shares = request.form.get("shares")
+        quote = lookup(symbol)
+
+        # return apology if symbol not provided or invalid
+        if quote == None:
+            return apology("must provide valid stock symbol", 403)
+
+        # return apology if shares not provided. buy form only accepts positive integers
+        if not shares:
+            return apology("must provide number of shares", 403)
+
+        # cast symbol to uppercase and cast shares to int, in order to work with them
+        symbol = symbol.upper()
+        shares = int(shares)
+        purchase = quote['price'] * shares
+
+        # make sure user can afford current stock, checking amount of cash in users table
+
+        # select this user's cash balance from users table
+        balance = db.execute("SELECT cash FROM users WHERE id = :id", id=session["user_id"])
+        balance = balance[0]['cash']
+        remainder = balance - purchase
+
+        # if purchase price exceeds balance, return error
+        if remainder < 0:
+            return apology("insufficient funds", 403)
+
+        # query portfolio table for row with this userid and stock symbol:
+        row = db.execute("SELECT * FROM portfolio WHERE userid = :id AND symbol = :symbol",
+                         id=session["user_id"], symbol=symbol)
+
+        # if row doesn't exist yet, create it but don't update shares
+        if len(row) != 1:
+            db.execute("INSERT INTO portfolio (userid, symbol) VALUES (:id, :symbol)",
+                       id=session["user_id"], symbol=symbol)
+
+        # get previous number of shares owned
+        oldshares = db.execute("SELECT shares FROM portfolio WHERE userid = :id AND symbol = :symbol",
+                               id=session["user_id"], symbol=symbol)
+        oldshares = oldshares[0]["shares"]
+
+        # add purchased shares to previous share number
+        newshares = oldshares + shares
+
+        # update shares in portfolio table
+        db.execute("UPDATE portfolio SET shares = :newshares WHERE userid = :id AND symbol = :symbol",
+                   newshares=newshares, id=session["user_id"], symbol=symbol)
+
+        # update cash balance in users table
+        db.execute("UPDATE users SET cash = :remainder WHERE id = :id",
+                   remainder=remainder, id=session["user_id"])
+
+        # update history table
+        db.execute("INSERT INTO history (userid, symbol, shares, method, price) VALUES (:userid, :symbol, :shares, 'Buy', :price)",
+                   userid=session["user_id"], symbol=symbol, shares=shares, price=quote['price'])
+
+    # redirect to index page
+    return redirect("/")
 
 
 @app.route("/history")
