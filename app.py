@@ -22,8 +22,11 @@ app.config["SESSION_PERMANENT"] = False
 app.config["SESSION_TYPE"] = "filesystem"
 Session(app)
 
-# Configure CS50 Library to use SQLite database
-db = SQL("sqlite:///finance.db")
+# Connect heroku postgresl database
+uri = os.getenv("DATABASE_URL")
+if uri.startswith("postgres://"):
+    uri = uri.replace("postgres://", "postgresql://")
+db = SQL(uri)
 
 # Make sure API key is set
 if not os.environ.get("API_KEY"):
@@ -147,8 +150,12 @@ def buy():
 @app.route("/history")
 @login_required
 def history():
-    """Show history of transactions"""
-    return apology("TODO")
+    """Show history of transactions"""    
+    
+    rows = db.execute("SELECT * FROM history WHERE userid = :userid", userid=session["user_id"])
+
+    # return history template
+    return render_template("history.html", rows=rows)
 
 
 @app.route("/login", methods=["GET", "POST"])
@@ -202,7 +209,21 @@ def logout():
 @login_required
 def quote():
     """Get stock quote."""
-    return apology("TODO")
+        # if GET method, return quote.html form
+    if request.method == "GET":
+        return render_template("quote.html")
+
+    # if POST method, get info from form, make sure it's a valid stock
+    else:
+
+        # lookup ticker symbol from quote.html form
+        symbol = lookup(request.form.get("symbol"))
+
+        # if lookup() returns None, it's not a valid stock symbol
+        if symbol == None:
+            return apology("invalid stock symbol", 403)
+
+        # Return template with stock quote, passing in symbol d
 
 
 @app.route("/register", methods=["GET", "POST"])
