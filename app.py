@@ -250,4 +250,72 @@ def register():
 @login_required
 def sell():
     """Sell shares of stock"""
-    return apology("TODO")
+    
+    # if GET method, render sell.html form
+    if request.method == "GET":
+
+        # get the user's current stocks
+        portfolio = db.execute("SELECT symbol FROM portfolio WHERE userid = :id",
+                               id=session["user_id"])
+
+        # render sell.html form, passing in current stocks
+        return render_template("sell.html", portfolio=portfolio)
+
+    # if POST method, sell stock
+    else:
+        # save stock symbol, number of shares, and quote dict from form
+        symbol = request.form.get("symbol")
+        shares = request.form.get("shares")
+        quote = lookup(symbol)
+        rows = db.execute("SELECT * FROM portfolio WHERE userid = :id AND symbol = :symbol",
+                          id=session["user_id"], symbol=symbol)
+
+        # return apology if symbol invalid/ not owned
+        if len(rows) != 1:
+            return apology("must provide valid stock symbol", 403)
+
+        # return apology if shares not provided. buy form only accepts positive integers
+        if not shares:
+            return apology("must provide number of shares", 403)
+
+        # current shares of this stock
+        oldshares = rows[0]['shares']
+
+        # cast shares from form to int
+        shares = int(shares)
+
+        # return apology if trying to sell more shares than own
+        if shares > oldshares:
+            return apology("shares sold can't exceed shares owned", 403)
+
+        # get current value of stock price times shares
+        sold = quote['price'] * shares
+
+        # add value of sold stocks to previous cash balance
+        cash = db.execute("SELECT cash FROM users WHERE id = :id", id=session['user_id'])
+        cash = cash[0]['cash']
+        cash = cash + sold
+
+        # update cash balance in users table
+        db.execute("UPDATE users SET cash = :cash WHERE id = :id",
+                   cash=cash, id=session["user_id"])
+
+        # subtract sold shares from previous shares
+        newshares = oldshares - shares
+
+        # if shares remain, update portfolio table with new shares
+        if shares > 0:
+            db.execute("UPDATE portfolio SET shares = :newshares WHERE userid = :id AND symbol = :symbol",
+                       newshares=newshares, id=session["user_id"], symbol=symbol)
+
+        # otherwise delete stock row because no shares remain
+        else:
+            db.execute("DELETE FROM portfolio WHERE symbol = :symbol AND userid = :id",
+                       symbol=symbol, id=session["user_id"])
+
+        # update history table
+        db.execute("INSERT INTO history (userid, symbol, shares, method, price) VALUES (:userid, :symbol, :shares, 'Sell', :price)",
+                   userid=session["user_id"], symbol=symbol, shares=shares, price=quote['price'])
+
+        # redirect to index page
+        return redirect("/")
